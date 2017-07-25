@@ -1,3 +1,5 @@
+/* This code is FSK18 (contains "shit")*/
+
 #include <ESP8266WiFi.h>
 #include "SSD1306.h"
 
@@ -7,21 +9,26 @@
 
 const char* ssid     = <Syntax error because of missing ssid>;
 const char* password = <Syntax error because of missing pw>;
-                
+
+/* change the Port and IP of the influxdb connector */               
 const int port = 8086;
 const byte host[] = {192, 168, 178, 55};
 
+/* The diferent queries for the timebases */
 const String url_48h = "/query?db=HP_Baxxter&epoch=h&q=SELECT%20count%28%22value%22%29%20FROM%20%22powertick%22%20WHERE%20time%20%3E%20now%28%29%20-%2048h%20GROUP%20BY%20time%2824m%29%20fill%280%29";
 const String url_24h = "/query?db=HP_Baxxter&epoch=h&q=SELECT%20count%28%22value%22%29%20FROM%20%22powertick%22%20WHERE%20time%20%3E%20now%28%29%20-%2024h%20GROUP%20BY%20time%2812m%29%20fill%280%29";
 const String url_120min = "/query?db=HP_Baxxter&epoch=h&q=SELECT%20count%28%22value%22%29%20FROM%20%22powertick%22%20WHERE%20time%20%3E%20now%28%29%20-%20120m%20GROUP%20BY%20time%281m%29%20fill%280%29";
 const String url_60min = "/query?db=HP_Baxxter&epoch=h&q=SELECT%20count%28%22value%22%29%20FROM%20%22powertick%22%20WHERE%20time%20%3E%20now%28%29%20-%2060m%20GROUP%20BY%20time%2830s%29%20fill%280%29";
 const String url_30min = "/query?db=HP_Baxxter&epoch=h&q=SELECT%20count%28%22value%22%29%20FROM%20%22powertick%22%20WHERE%20time%20%3E%20now%28%29%20-%2030m%20GROUP%20BY%20time%2815s%29%20fill%280%29";
 
+/* all teh other shit */
 String line;
 
+/* needed for the updating process */
 unsigned long prevTime = 0;
 unsigned long whait_s = 5000;
 unsigned long curTime = 0;
+
 String printline = "";
 int request_mode = 0;
 int val[128];
@@ -39,6 +46,7 @@ extern "C" {
 //===== SETTINGS =====//
 //create display(Adr, SDA-pin, SCL-pin)
 SSD1306 display(0x3c, 5, 4); //GPIO 5 = D1, GPIO 4 = D2
+
 
 void setupWiFi(){
   line.reserve(512);
@@ -89,6 +97,7 @@ void setup(){
     setupWiFi();
 }
 
+/* This funktion is needed for the visualisation of the bars */
 void getMultiplicator(){
     maxVal = 1;
     for(int i=0;i<128;i++){
@@ -100,6 +109,7 @@ void getMultiplicator(){
 
 void loop() {
     curTime = millis();
+      /* If the button was pressed we will change the mode and inform the user that something is going on */
       if(digitalRead(btn) == LOW){
         canBtnPress = false;
       }else if(!canBtnPress){
@@ -110,17 +120,16 @@ void loop() {
         display.clear();
         display.drawString(3, 0, "Loading DATA!!!");
         display.display(); 
-
-
      }
-     if(curTime - prevTime >= whait_s){  //Update the Dataset only every 5s or so 
+     /*Update the Dataset only every 5s or so */
+     if(curTime - prevTime >= whait_s){  
         prevTime = curTime;
         update_data =true;
      }
      if(update_data){  //Update the Dataset only every 5s or so 
         update_data =false;
     
-        // Use WiFiClient class to create TCP connections
+        /* Use WiFiClient class to create TCP connections*/
         WiFiClient client;
         if (!client.connect(host,8086)) {
             #ifdef DEBUG
@@ -129,7 +138,7 @@ void loop() {
             return;
         }
 
-        // Based on the request_mode we will send the request to the server
+        /* Based on the request_mode we will send the request to the serve AND we will set the Update time*/
         if(request_mode == 0){
               client.print(String("GET ") + url_48h + " HTTP/1.1\r\n" +
                            "Host: " + "192.168.178.55:8086" + "\r\n" + 
@@ -177,14 +186,17 @@ void loop() {
         */
         while(client.available()){
             line = client.readStringUntil('\r');
-            if (line.substring(3,10) == "results") { // We will get "{"results":[{"statement_id":0}]}" if there are no datapoints
+            /* If there is at least a "result" in the responce we can do something*/
+            if (line.substring(3,10) == "results") { 
                 sum = 0;
+                /* We will get "{"results":[{"statement_id":0}]}" if there are no datapoints */
                 if (line.substring(30,33) == "}]}") {
                     for(int i =0 ; i<128 ; i++){
                       val[i] = 1;
+                      sun=0;
                     }
                 } else if (line.length() > 97){
-                    line.remove(0,97); 
+                    line.remove(0,97); // all teh junk in front can be removed
                     int i=0;
                     int comma = 0;
                     int bracket = 0;
@@ -192,13 +204,14 @@ void loop() {
                       comma  = line.indexOf(',');
                       bracket = line.indexOf(']');
                       if(i < 128){
-                        val[i]=line.substring(comma+1,bracket).toInt()+1; // get all the values out ogf the message
+                        val[i]=(line.substring(comma+1,bracket).toInt()+1); // get all the values out of the message
                         sum += val[i];
+                        val[i] = val[i] * 100; // only for visaulisation the getMultiplicator methode will handle the rest
                         i++;
                       }
                       line.remove(0,bracket+2);
                     } 
-
+                   /* There are some open fields... fill them */
                     for(; i < 128 ; i++){
                       val[i] = 1;
                     }
@@ -212,12 +225,12 @@ void loop() {
 
     if (update_display){
           update_display = false;
-          //draw all the shit
+          /*draw all the shit*/
           getMultiplicator();
       
           display.clear();
           for(int i=0;i<128;i++) display.drawLine(i, 64, i, 64-val[i]*multiplicator);
-          display.drawString(0, 0, printline  + ":" + (String)(sum/1000) + "kW");
+          display.drawString(0, 0, printline  + ":" + (String)(double(sum)/1000) + "kW");
           display.display(); 
     }
 } 
